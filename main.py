@@ -1,19 +1,29 @@
 import json
+import logging
 import os
 import time
-import requests
+
 import dotenv
+import requests
+from authlib.integrations.starlette_client import OAuth
 from fastapi import FastAPI, HTTPException
-import logging
+from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
-from fastapi.responses import HTMLResponse
-from authlib.integrations.starlette_client import OAuth
+
 from client_payload import ClientPayload
 
 dotenv.load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+CALLBACK_URL = os.getenv("CALLBACK_URL")
+API_KEY = os.getenv("API_KEY")
+SCOPE = os.getenv("SCOPE")
+
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key="jksdhfkudkfkjsfhkdf")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
 logging.basicConfig(
@@ -22,11 +32,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-CALLBACK_URL = os.getenv("CALLBACK_URL")
-API_KEY = os.getenv("API_KEY")
-SCOPE = os.getenv("SCOPE")
 
 logging.info(app)
 
@@ -100,7 +105,10 @@ async def homepage():
 
 
 def _do_refresh() -> str:
-    """Exchange the stored refresh token for a new access token. Returns the new access token."""
+    """Exchange the stored refresh token for a new access token.
+
+    Returns the new access token.
+    """
     if not tokens.get("refresh_token"):
         raise HTTPException(
             status_code=401, detail="No refresh token available. Visit /login first."
@@ -130,9 +138,11 @@ def _do_refresh() -> str:
 
 
 def get_valid_access_token() -> str:
-    """Return a valid access token, refreshing proactively if it is expired or near expiry."""
+    """Return a valid access token, refreshing proactively if expired or near expiry."""
     expires_at = tokens.get("expires_at")
-    if not tokens.get("access_token") or (expires_at is not None and time.time() > expires_at - 60):
+    if not tokens.get("access_token") or (
+        expires_at is not None and time.time() > expires_at - 60
+    ):
         return _do_refresh()
     return tokens["access_token"]
 
