@@ -1,0 +1,5 @@
+.env
+tokens.json
+CLAUDE.md
+.venv/
+__pycache__/
