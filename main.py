@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from client_payload import ClientPayload
+from client_payload import CasePayload, ClientPayload
 
 dotenv.load_dotenv()
 
@@ -77,6 +77,7 @@ async def login(request: Request):
 
 @app.get("/callback")
 async def callback(request: Request):
+    logging.info("Callback using client_id: %s", CLIENT_ID)
     token = await acre_auth.authorize_access_token(request)
     print(token)
     access_token = token["access_token"]
@@ -123,6 +124,10 @@ def _do_refresh() -> str:
             "client_secret": CLIENT_SECRET,
         },
     )
+    if not response.ok:
+        logging.error(
+            "Token refresh failed %s: %s", response.status_code, response.text
+        )
     response.raise_for_status()
     token_data = response.json()
 
@@ -185,6 +190,45 @@ async def create_client(payload: ClientPayload):
         access_token = _do_refresh()
         response = requests.post(
             client_url,
+            json=body,
+            headers={"X-API-KEY": API_KEY},
+            cookies={"authorization": access_token},
+        )
+
+    if not response.ok:
+        try:
+            detail = response.json()
+        except Exception:
+            detail = response.text
+        logging.error("Acre API error %s: %s", response.status_code, detail)
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    return response.json()
+
+
+@app.post("/case")
+async def create_case(payload: CasePayload):
+    access_token = get_valid_access_token()
+
+    case_url = "https://api.acreplatforms.co.uk/v1/acre/case"
+
+    details: dict = {"client_ids": payload.client_ids}
+    if payload.owner_user_id:
+        details["owner_user_id"] = payload.owner_user_id
+
+    body = {"case": {"details": details}}
+
+    response = requests.post(
+        case_url,
+        json=body,
+        headers={"X-API-KEY": API_KEY},
+        cookies={"authorization": access_token},
+    )
+
+    if response.status_code == 401:
+        logging.info("Refreshed token")
+        access_token = _do_refresh()
+        response = requests.post(
+            case_url,
             json=body,
             headers={"X-API-KEY": API_KEY},
             cookies={"authorization": access_token},

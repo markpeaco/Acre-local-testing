@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, field_validator
 
 
@@ -12,3 +14,8 @@ class ClientPayload(BaseModel):
         if len(v.strip().split(" ", 1)) < 2:
             raise ValueError("contact_name must include both a first and last name")
         return v.strip()
+
+
+class CasePayload(BaseModel):
+    client_ids: list[str]
+    owner_user_id: Optional[str] = None
