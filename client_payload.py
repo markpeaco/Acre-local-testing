@@ -7,6 +7,10 @@ class ClientPayload(BaseModel):
     contact_name: str
     email_address: str
     number: str
+    client_user_originator: str
+    income: str
+    external_id: int
+    external_name: str
 
     @field_validator("contact_name")
     @classmethod
@@ -19,3 +23,9 @@ class ClientPayload(BaseModel):
 class CasePayload(BaseModel):
     client_ids: list[str]
     owner_user_id: Optional[str] = None
+    owner_id: Optional[str] = None
+    mortgage_amount: str
+
+
+class GetClientPayload(BaseModel):
+    client_id: str

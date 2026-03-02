@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from client_payload import CasePayload, ClientPayload
+from client_payload import CasePayload, ClientPayload, GetClientPayload
 
 dotenv.load_dotenv()
 
@@ -21,6 +21,7 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 CALLBACK_URL = os.getenv("CALLBACK_URL")
 API_KEY = os.getenv("API_KEY")
 SCOPE = os.getenv("SCOPE")
+ORG_ID = os.getenv("ORG_ID")
 
 app = FastAPI()
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -159,13 +160,48 @@ async def refresh_route():
     return {"access_token": new_token}
 
 
+@app.post("/get-client")
+async def get_client(payload: GetClientPayload):
+    access_token = get_valid_access_token()
+
+    url = "https://api.acreplatforms.co.uk/v1/acre/client"
+    params = {"client_ids": payload.client_id, "client_details": "true"}
+
+    response = requests.get(
+        url,
+        params=params,
+        headers={"X-API-KEY": API_KEY},
+        cookies={"authorization": access_token},
+    )
+
+    if response.status_code == 401:
+        access_token = _do_refresh()
+        response = requests.get(
+            url,
+            params=params,
+            headers={"X-API-KEY": API_KEY},
+            cookies={"authorization": access_token},
+        )
+
+    if not response.ok:
+        try:
+            detail = response.json()
+        except Exception:
+            detail = response.text
+        logging.error("Acre API error %s: %s", response.status_code, detail)
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    return response.json()
+
+
 @app.post("/client")
 async def create_client(payload: ClientPayload):
+    logging.info("create_client received payload: %s", payload.model_dump())
     access_token = get_valid_access_token()
 
     client_url = "https://api.acreplatforms.co.uk/v1/acre/client"
 
     first_name, last_name = payload.contact_name.split(" ", 1)
+
     body = {
         "client": {
             "details": {
@@ -173,9 +209,10 @@ async def create_client(payload: ClientPayload):
                 "last_name": last_name,
                 "contact_details_email": payload.email_address,
                 "contact_details_mobile_phone": payload.number,
-            }
+            },
         }
     }
+    logging.info("\ncreate_client sending body: %s", body)
 
     response = requests.post(
         client_url,
@@ -198,15 +235,20 @@ async def create_client(payload: ClientPayload):
     if not response.ok:
         try:
             detail = response.json()
+            logging.info(detail)
         except Exception:
             detail = response.text
-        logging.error("Acre API error %s: %s", response.status_code, detail)
+        logging.error("Acre create error %s: %s", response.status_code, detail)
         raise HTTPException(status_code=response.status_code, detail=detail)
-    return response.json()
+
+    result = response.json()
+    logging.info("create_client Acre response: %s", result)
+    return result
 
 
 @app.post("/case")
 async def create_case(payload: CasePayload):
+    logging.info("create_case received payload: %s", payload.model_dump())
     access_token = get_valid_access_token()
 
     case_url = "https://api.acreplatforms.co.uk/v1/acre/case"
@@ -216,6 +258,7 @@ async def create_case(payload: CasePayload):
         details["owner_user_id"] = payload.owner_user_id
 
     body = {"case": {"details": details}}
+    logging.info("create_case sending body: %s", body)
 
     response = requests.post(
         case_url,
@@ -241,4 +284,42 @@ async def create_case(payload: CasePayload):
             detail = response.text
         logging.error("Acre API error %s: %s", response.status_code, detail)
         raise HTTPException(status_code=response.status_code, detail=detail)
-    return response.json()
+    result = response.json()
+    logging.info("create_case Acre response: %s", result)
+    return result
+
+
+@app.get("/users")
+async def get_users():
+    access_token = get_valid_access_token()
+
+    url = "https://api.acreplatforms.co.uk/v1/acre/user"
+
+    params = {"filter_organisation_id": ORG_ID}
+
+    response = requests.get(
+        url,
+        headers={"X-API-KEY": API_KEY},
+        cookies={"authorization": access_token},
+        params=params,
+    )
+
+    if response.status_code == 401:
+        access_token = _do_refresh()
+        response = requests.get(
+            url,
+            headers={"X-API-KEY": API_KEY},
+            cookies={"authorization": access_token},
+            params=params,
+        )
+
+    if not response.ok:
+        try:
+            detail = response.json()
+        except Exception:
+            detail = response.text
+        logging.error("Acre API error %s: %s", response.status_code, detail)
+        raise HTTPException(status_code=response.status_code, detail=detail)
+
+    users = response.json()["users"]
+    return {u["first_name"]: u["user_id"] for u in users}
